@@ -9,7 +9,19 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
-import anthropic
+
+# Importar cliente apropiado según disponibilidad
+try:
+    import anthropic
+    HAS_ANTHROPIC = True
+except ImportError:
+    HAS_ANTHROPIC = False
+
+try:
+    from openai import OpenAI
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
 
 from infraestructura.loggers.jarvisz_logger import JarvisZLogger
 
@@ -21,11 +33,13 @@ class AgenteAutonomo:
         self,
         rol: str,
         prompt_template: str,
-        client: anthropic.Anthropic,
+        client,
+        use_ollama: bool = False,
     ):
         self.rol = rol
         self.prompt_template = prompt_template
         self.client = client
+        self.use_ollama = use_ollama
         self.ultimo_analisis = None
 
     def analizar(
@@ -37,9 +51,10 @@ class AgenteAutonomo:
         """
         El agente analiza un tema desde su perspectiva de rol.
         Piensa de forma autónoma basado en su prompt.
+        Funciona con Anthropic Claude o Ollama (OpenAI compatible).
         """
 
-        # Construir el mensaje que se envía a Claude
+        # Construir el mensaje que se envía al modelo
         mensaje_sistema = self.prompt_template
 
         # Contexto adicional que enriquece el análisis
@@ -60,23 +75,44 @@ Por favor, proporciona tu análisis desde la perspectiva de {self.rol}.
 Sé específico, accionable y fundamentado en datos o lógica clara.
 """
 
-        # Ejecutar agente con Claude API
-        respuesta = self.client.messages.create(
-            model="claude-3-5-sonnet-20241022",  # Usar modelo disponible
-            max_tokens=1500,
-            messages=[
-                {
-                    "role": "user",
-                    "content": mensaje_usuario,
-                }
-            ],
-            system=mensaje_sistema,
-        )
+        try:
+            if self.use_ollama:
+                # Usar OpenAI client (Ollama compatible)
+                respuesta = self.client.chat.completions.create(
+                    model="llama3",  # Modelo disponible en Ollama
+                    max_tokens=1500,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": mensaje_sistema,
+                        },
+                        {
+                            "role": "user",
+                            "content": mensaje_usuario,
+                        }
+                    ],
+                )
+                analisis = respuesta.choices[0].message.content
+            else:
+                # Usar Anthropic Claude API
+                respuesta = self.client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=1500,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": mensaje_usuario,
+                        }
+                    ],
+                    system=mensaje_sistema,
+                )
+                analisis = respuesta.content[0].text
 
-        analisis = respuesta.content[0].text
-        self.ultimo_analisis = analisis
+            self.ultimo_analisis = analisis
+            return analisis
 
-        return analisis
+        except Exception as e:
+            raise Exception(f"Error en análisis de {self.rol}: {str(e)}")
 
     def extraer_datos_solicitados(self, analisis: str) -> Dict[str, List]:
         """
@@ -120,6 +156,8 @@ class Orquestador:
     4. Registra en Jarvisz
     5. Detecta conflictos y patrones
     6. Sugiere decisiones
+
+    Soporta: Anthropic Claude o Ollama (OpenAI compatible)
     """
 
     def __init__(
@@ -127,11 +165,31 @@ class Orquestador:
         prompts_dir: str = "./directorio/prompts",
         db_path: str = "./infraestructura/db/jarvisz.db",
         api_key: Optional[str] = None,
+        ollama_url: str = "http://192.168.0.62:11434/v1",
     ):
         self.prompts_dir = Path(prompts_dir)
         self.jarvisz = JarvisZLogger(db_path)
-        self.api_key = api_key or os.getenv("CLAUDE_API_KEY")
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+
+        # Determinar qué cliente usar
+        self.use_ollama = False
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+
+        if self.api_key and HAS_ANTHROPIC:
+            # Usar Anthropic
+            print("🔌 Usando Anthropic Claude API")
+            self.client = anthropic.Anthropic(api_key=self.api_key)
+            self.use_ollama = False
+        elif HAS_OPENAI:
+            # Usar Ollama (OpenAI compatible)
+            print(f"🔌 Usando Ollama en {ollama_url}")
+            self.client = OpenAI(
+                base_url=ollama_url,
+                api_key="ollama"  # Dummy key para Ollama
+            )
+            self.use_ollama = True
+        else:
+            raise RuntimeError("❌ No hay cliente disponible. Instala 'anthropic' o 'openai'")
+
         self.agentes: Dict[str, AgenteAutonomo] = {}
 
         # Cargar prompts y crear agentes
@@ -148,7 +206,12 @@ class Orquestador:
                 with open(archivo_prompt, "r", encoding="utf-8") as f:
                     prompt_content = f.read()
 
-                agente = AgenteAutonomo(rol, prompt_content, self.client)
+                agente = AgenteAutonomo(
+                    rol,
+                    prompt_content,
+                    self.client,
+                    use_ollama=self.use_ollama
+                )
                 self.agentes[rol] = agente
                 print(f"✓ Agente {rol} inicializado")
             else:
