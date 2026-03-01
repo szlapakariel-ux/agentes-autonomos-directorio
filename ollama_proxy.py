@@ -33,10 +33,8 @@ class OllamaProxyHandler(http.server.BaseHTTPRequestHandler):
     def _proxy_request(self, method):
         """Proxy la request al Ollama de Windows"""
         try:
-            # Construir URL en Windows
+            # Construir URL en Windows (path incluye query string)
             target_url = f"{WINDOWS_OLLAMA_URL}{self.path}"
-            if self.query_string:
-                target_url += f"?{self.query_string}"
 
             # Preparar headers
             headers = {k: v for k, v in self.headers.items()
@@ -95,6 +93,7 @@ class OllamaProxyHandler(http.server.BaseHTTPRequestHandler):
 def main():
     """Inicia el proxy"""
     handler = OllamaProxyHandler
+    socketserver.TCPServer.allow_reuse_address = True
 
     try:
         with socketserver.TCPServer(("127.0.0.1", LOCAL_PORT), handler) as httpd:
