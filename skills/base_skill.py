@@ -8,11 +8,11 @@ import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, Dict, Any
-import anthropic
 
 from infraestructura.security.agent_sandbox import AgentSandbox, Capability
 from infraestructura.security.input_validation import InputValidator
 from infraestructura.security.secrets import get_secrets
+from infraestructura.model_router import get_backend, call_model
 
 logger = logging.getLogger(__name__)
 PROMPTS_DIR = Path("./directorio/prompts")
@@ -31,7 +31,6 @@ class BaseSkill(ABC):
     def __init__(self):
         self.sandbox = AgentSandbox(self.agent_name)
         self.prompt_template = self._load_prompt()
-        self._client: Optional[anthropic.Anthropic] = None
 
     def _load_prompt(self) -> str:
         """Carga el prompt del rol desde archivo"""
@@ -44,16 +43,6 @@ class BaseSkill(ABC):
 
         return prompt_path.read_text(encoding="utf-8")
 
-    def _get_client(self) -> anthropic.Anthropic:
-        """Obtiene cliente Anthropic con API key del secrets manager"""
-        if self._client is None:
-            secrets = get_secrets()
-            api_key = secrets.get("CLAUDE_API_KEY")
-            if not api_key:
-                raise EnvironmentError("CLAUDE_API_KEY no configurada")
-            self._client = anthropic.Anthropic(api_key=api_key)
-        return self._client
-
     def analyze(
         self,
         tema: str,
@@ -62,14 +51,7 @@ class BaseSkill(ABC):
     ) -> str:
         """
         Analiza un tema de forma autónoma desde la perspectiva del rol.
-
-        Args:
-            tema: Tema a analizar
-            contexto: Contexto adicional (opcional)
-            datos_previos: Datos de reuniones anteriores (opcional)
-
-        Returns:
-            Análisis del agente en formato texto
+        Usa modelo local (Ollama) si está disponible, Claude API como fallback.
         """
 
         # 1. Validar inputs
@@ -82,7 +64,7 @@ class BaseSkill(ABC):
             if not valid:
                 raise ValueError(f"Contexto inválido: {error}")
 
-        # 2. Verificar recurso de API
+        # 2. Verificar recursos del sandbox
         self.sandbox.check_resources()
         self.sandbox.record_api_call()
 
@@ -92,20 +74,21 @@ class BaseSkill(ABC):
             user_message += f"\n\nCONTEXTO:\n{contexto}"
         if datos_previos:
             import json
-            user_message += f"\n\nDAtos PREVIOS:\n{json.dumps(datos_previos, indent=2, ensure_ascii=False)}"
+            user_message += f"\n\nDATOS PREVIOS:\n{json.dumps(datos_previos, indent=2, ensure_ascii=False)}"
 
         user_message += f"\n\nResponde como {self.agent_name}. Sé específico y accionable."
 
-        # 4. Llamar a Claude API
-        client = self._get_client()
-        response = client.messages.create(
-            model=os.getenv("PRIMARY_MODEL", "claude-haiku-4-5-20251001"),
-            max_tokens=self.sandbox.limits.get("max_tokens", 1500),
-            system=self.prompt_template,
-            messages=[{"role": "user", "content": user_message}],
-        )
+        # 4. Resolver backend (Ollama local o Claude API)
+        backend, model = get_backend(self.agent_name)
 
-        raw_output = response.content[0].text
+        # 5. Llamar al modelo
+        raw_output = call_model(
+            backend=backend,
+            model=model,
+            system_prompt=self.prompt_template,
+            user_message=user_message,
+            max_tokens=self.sandbox.limits.get("max_tokens", 1500),
+        )
 
         # 5. Sanitizar output
         safe_output = InputValidator.sanitize_output(raw_output, self.agent_name)
