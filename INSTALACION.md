@@ -6,10 +6,29 @@
 
 ## 📋 ÍNDICE DE INSTALACIÓN
 
+**⚠️ IMPORTANTE**: Si eres Claude Code (abres esto en la máquina), lee primero: [INSTRUCCIONES_PARA_CLAUDE.md](./INSTRUCCIONES_PARA_CLAUDE.md)
+
+Ese archivo tiene las **órdenes explícitas** para instalar TODO automáticamente.
+
+---
+
 Sigue estos pasos **EN ORDEN**:
 
-### 1️⃣ [SETUP_WINDOWS.md](./SETUP_WINDOWS.md)
-**Instala Claudbot y dependencias Python**
+### 1️⃣ [INSTRUCCIONES_PARA_CLAUDE.md](./INSTRUCCIONES_PARA_CLAUDE.md) ← **LEE PRIMERO**
+**Órdenes explícitas para instalar Claudbot + Modelos + Seguridad**
+
+- Instalar Claudbot
+- Descargar modelos IA (Ollama)
+- Configurar seguridad
+- Verificar que TODO funciona
+- **Tiempo**: 2-4 horas (depende de descargas)
+
+**👉 Si eres Claude Code, EMPIEZA AQUÍ**
+
+---
+
+### 2️⃣ [SETUP_WINDOWS.md](./SETUP_WINDOWS.md)
+**Guía detallada (manual): Instala Claudbot y dependencias Python**
 
 - Requisitos previos (Python, Git, etc.)
 - Clonar repositorio
