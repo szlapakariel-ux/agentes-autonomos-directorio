@@ -165,7 +165,7 @@ class Orquestador:
         prompts_dir: str = "./directorio/prompts",
         db_path: str = "./infraestructura/db/jarvisz.db",
         api_key: Optional[str] = None,
-        ollama_url: str = "http://192.168.0.62:11434/v1",
+        ollama_url: str = "http://127.0.0.1:11434/v1",
     ):
         self.prompts_dir = Path(prompts_dir)
         self.jarvisz = JarvisZLogger(db_path)
